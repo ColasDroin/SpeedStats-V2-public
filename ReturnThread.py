@@ -1,8 +1,9 @@
 from threading import Thread
 
 class ReturnThread(Thread):
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs={}, Verbose=None):
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, Verbose=None):
+        if kwargs is None:
+            kwargs = {}
         Thread.__init__(self, group, target, name, args, kwargs)
         self._return = None
  
