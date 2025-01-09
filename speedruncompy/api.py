@@ -16,7 +16,7 @@ LANG = "en"
 ACCEPT = "application/json"
 USE_PROXY = False
 TIMEOUT = 80
-MAX_ATTEMPTS = 15
+MAX_ATTEMPTS = 20
 
 PROXIES = []  # If you set up proxies on Heroku, put their URLs here
 

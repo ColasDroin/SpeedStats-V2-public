@@ -1,5 +1,7 @@
 import json
 import logging
+import os
+import pickle
 import random
 import sys
 from threading import Thread
@@ -29,7 +31,7 @@ CONCURRENT_THREADS = 2
 GAME_BATCH_SIZE = 90
 
 runs = []
-
+l_temp_run = []
 series = {}
 games = {}
 categories = {}
@@ -63,9 +65,7 @@ class Run:
 
             levelText = ", " + levels.get(run.get("levelId")) if isLevelRun else ""
             subcategoryText = (
-                " - " + ", ".join(subcategoryValueNames)
-                if subcategoryValueNames
-                else ""
+                " - " + ", ".join(subcategoryValueNames) if subcategoryValueNames else ""
             )
             groupName = (
                 games.get(run.get("gameId"))
@@ -145,7 +145,8 @@ def joinThreads(threads: list, extend: bool = True):
         if (returnValue := t.join()) is not None:  # Always None for normal Threads
             returnValues.extend(returnValue) if extend else returnValues.append(returnValue)
         elif type(t) == ReturnThread:
-            _log.warning("A Return Thread returned None.")
+            # _log.warning("A Return Thread returned None.")
+            raise ValueError("A Return Thread returned None.")
     threads.clear()
     return returnValues
 
@@ -241,7 +242,9 @@ def exploreLeaderboard(categoryOverview: dict, page: int = 1, type: int = 1):
             players[player["id"]] = playerName
 
         for run in runBatch["runs"]:
-            runs.append(Run(seriesId, timeDirection, defaultTimer, run))
+            l_temp_run.append(Run(seriesId, timeDirection, defaultTimer, run))
+        # runs.extend(l_temp_run)
+        runs = l_temp_run
     else:
         runBatch = GetGameLeaderboard2(
             gameId, categoryId, obsolete=1, video=0, verified=1, page=page
@@ -253,7 +256,9 @@ def exploreLeaderboard(categoryOverview: dict, page: int = 1, type: int = 1):
                 playerName = f"[Guest]{player['name'].strip()}"
             players[player["id"]] = playerName
         for run in runBatch["runList"]:
-            runs.append(Run(seriesId, timeDirection, defaultTimer, run))
+            l_temp_run.append(Run(seriesId, timeDirection, defaultTimer, run))
+        # runs.extend(l_temp_run)
+        runs = l_temp_run
 
     return runBatch["pagination"]["pages"]
 
@@ -341,8 +346,8 @@ def exploreSeries(seriesOverview: dict):
     return seriesGameOverviews
 
 
-def dumpData(path: str):
-    runsDict = [run.toDict() for run in runs]
+def dumpData(path: str, runs_to_dump: list = runs):
+    runsDict = [run.toDict() for run in runs_to_dump]
     runsJson = json.dumps(runsDict)
     with open(path, "w") as file:
         file.write(runsJson)
@@ -365,23 +370,42 @@ def testGame(path: str, gameId: str, gameName: str):
     dumpData(path)
 
 
-def exploreAll(path: str):
+def exploreAll(path: str, force_refresh: bool = False):
     _log.info(f"Will output runs to path {path}")
     seriesQueue = explorePages("series", GetSeriesList, "seriesList")
 
-    gameQueue = exploreList(seriesQueue, series, exploreSeries)  # Queues all series games
-    gameQueue.extend(
-        explorePages("games", GetGameList, "gameList")
-    )  # Queues all normal games, duplicates will be skipped later
+    # Check if gameQueue has already been pickled
+    if os.path.isfile("data/gameQueue.pkl") and not force_refresh:
+        with open("data/gameQueue.pkl", "rb") as file:
+            gameQueue = pickle.load(file)
+    else:
+        gameQueue = exploreList(seriesQueue, series, exploreSeries)  # Queues all series games
+        gameQueue.extend(
+            explorePages("games", GetGameList, "gameList")
+        )  # Queues all normal games, duplicates will be skipped later
 
+        # Drop gameQueue as a pickle
+        with open("data/gameQueue.pkl", "wb") as file:
+            pickle.dump(gameQueue, file)
+
+    # Extract batches of games
     gameBatches = [
         gameQueue[x : x + GAME_BATCH_SIZE] for x in range(0, len(gameQueue), GAME_BATCH_SIZE)
     ]
-    for gameBatch in gameBatches:
+    for idx, gameBatch in enumerate(gameBatches):
+        # Check if batch has not already been processed
+        if os.path.isfile(f"{path[:-5]}_{idx}.json") and not force_refresh:
+            logging.info(f"Skipping batch {idx} as it has already been processed.")
+        # Clear runs from previous batch
+        l_temp_run.clear()
+        # Explore the batch
         categoryQueue = exploreList(gameBatch, games, exploreGame)
         leaderboardRequestQueue = exploreList(
             categoryQueue, categories, exploreCategory
         )  # Adds runs on page 1
         exploreLeaderboardRequests(leaderboardRequestQueue)  # Adds runs on pages 2 and beyond
-
-    dumpData(path)
+        dumpData(
+            f"{path[:-5]}_{idx}.json",
+            l_temp_run,
+        )
+    # dumpData(path)
