@@ -396,6 +396,7 @@ def exploreAll(path: str, force_refresh: bool = False):
         # Check if batch has not already been processed
         if os.path.isfile(f"{path[:-5]}_{idx}.json") and not force_refresh:
             logging.info(f"Skipping batch {idx} as it has already been processed.")
+            continue
         # Clear runs from previous batch
         l_temp_run.clear()
         # Explore the batch
