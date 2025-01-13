@@ -141,12 +141,16 @@ def testEndpoint(request: BaseRequest):
 
 def joinThreads(threads: list, extend: bool = True):
     returnValues = []
-    for t in threads:
+    failed = 0
+    for idx, t in enumerate(threads):
         if (returnValue := t.join()) is not None:  # Always None for normal Threads
             returnValues.extend(returnValue) if extend else returnValues.append(returnValue)
         elif type(t) == ReturnThread:
-            # _log.warning("A Return Thread returned None.")
-            raise ValueError("A Return Thread returned None.")
+            if failed < 2:
+                failed += 1
+                _log.warning(f"Thread {idx} failed to return a value. Retrying...")
+            else:
+                raise ValueError("A Return Thread returned None.")
     threads.clear()
     return returnValues
 
